@@ -1,0 +1,44 @@
+#/bin/bash
+
+#/ Crostini containers will overwrite /etc/resolv.conf without respecting
+#/ /etc/dhcp/dhclient.conf. This program will reload dhclient if nameservers
+#/ get removed.
+#/
+#/ Usage: dhclient-reload
+
+set -e
+
+usage() {
+  grep "^#/" "$0" | cut -c"4-" >&2
+  exit "$1"
+}
+
+while [ "$#" -gt 0 ]
+do
+  case "$1" in
+    -h|--help) usage 0;;
+    -*) usage 1;;
+    *) break ;;
+  esac
+done
+
+EXPECTED_NS=() NS=() RELOAD=0
+
+EXPECTED_NS=($(grep -oP "prepend domain-name-servers \K.*(?=;)" /etc/dhcp/dhclient.conf  | tr ',' '\n'))
+NS=($(grep -oP "nameserver \K.*" /etc/resolv.conf))
+
+for i in "${EXPECTED_NS[@]}"; do
+  skip=
+  for j in "${NS[@]}"; do
+      [[ $i == $j ]] && { skip=1; break; }
+  done
+  [[ -n $skip ]] || echo "$i not found in /etc/resolv.conf" && RELOAD=1
+done
+
+if [ $RELOAD -ne 0 ]
+then
+  echo "Reloading dhclient..."
+  /sbin/dhclient -r && /sbin/dhclient
+else
+  echo "/etc/resolv.conf matches /etc/dhcp/dhclient.conf. No action necessary."
+fi
